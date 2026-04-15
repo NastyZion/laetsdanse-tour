@@ -5,331 +5,247 @@ import './index.css'
 
 gsap.registerPlugin(ScrollTrigger)
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-const INTRO_FRAMES = 110   // /framesintro/google_001.jpg → google_110.jpg
-const WALK_FRAMES = 139   // /frames/gravilliers_001.jpg → gravilliers_139.jpg
-const TOTAL_FRAMES = INTRO_FRAMES + WALK_FRAMES  // 249
+// ─── CONFIGURATION ──────────────────────────────────────────────────────────
+const INTRO_FRAMES = 110
+const WALK_FRAMES = 139
+const TOTAL_FRAMES = INTRO_FRAMES + WALK_FRAMES
 
-/** Returns the correct image path for global frame index 0–248 */
 function framePath(index: number): string {
-  if (index < INTRO_FRAMES) {
-    return `/framesintro/google_${String(index + 1).padStart(3, '0')}.jpg`
-  }
+  if (index < INTRO_FRAMES) return `/framesintro/google_${String(index + 1).padStart(3, '0')}.jpg`
   const num = index - INTRO_FRAMES + 1
   return `/frames/gravilliers_${String(num).padStart(3, '0')}.jpg`
 }
 
-// ─── Canvas helpers ───────────────────────────────────────────────────────────
-function drawCover(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  canvas: HTMLCanvasElement,
-  offsetX = 0,
-  offsetY = 0
-) {
-  const cw = canvas.width
-  const ch = canvas.height
-  const iw = img.naturalWidth
-  const ih = img.naturalHeight
-  const scale = Math.max(cw / iw, ch / ih)
-  const sw = iw * scale
-  const sh = ih * scale
+function drawCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, canvas: HTMLCanvasElement, offsetX = 0, offsetY = 0, zoom = 1) {
+  const cw = canvas.width, ch = canvas.height
+  const iw = img.naturalWidth, ih = img.naturalHeight
+  const scale = Math.max(cw / iw, ch / ih) * zoom
+  const sw = iw * scale, sh = ih * scale
   const dx = (cw - sw) / 2 + offsetX * 0.015 * scale
   const dy = (ch - sh) / 2 + offsetY * 0.015 * scale
   ctx.clearRect(0, 0, cw, ch)
   ctx.drawImage(img, dx, dy, sw, sh)
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-interface GlassCardProps {
-  children: React.ReactNode
-  className?: string
-}
-
-function GlassCard({ children, className = '' }: GlassCardProps) {
+// ─── COMPOSANTS ─────────────────────────────────────────────────────────────
+function GlassCard({ children, className = "" }: { children: React.ReactNode, className?: string }) {
   return (
-    <div
-      className={`
-        glasscard
-        bg-white/10 backdrop-blur-lg border border-white/20
-        shadow-2xl text-white rounded-3xl p-8 max-w-lg text-center
-        will-change-transform
-        ${className}
-      `}
-    >
+    <div className={`glasscard bg-white/5 backdrop-blur-md border-[4px] border-[#ff007f] shadow-[0_0_25px_rgba(255,0,127,0.6)] text-white rounded-3xl p-8 max-w-lg text-center ${className}`}>
       {children}
     </div>
   )
 }
 
-// ─── Preloader ────────────────────────────────────────────────────────────────
 function Preloader({ progress }: { progress: number }) {
-  const pct = Math.round(progress * 100)
+  const pct = Math.min(100, Math.round(progress * 100))
   return (
-    <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center"
-      style={{ background: '#fdf9f6' }}
-    >
-      <div className="mb-10 text-center">
-        <p className="text-xs tracking-[0.35em] uppercase text-pink-400 font-medium mb-1">
-          Studio
-        </p>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-700">
-          Laet's Danse
-        </h1>
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center" style={{ background: '#fdf9f6' }}>
+      <h1 className="text-3xl font-bold text-gray-700 mb-4 uppercase tracking-tighter">Laet's Danse</h1>
+      <div className="w-56 h-1 bg-pink-100 rounded-full overflow-hidden">
+        <div className="h-full bg-pink-400 transition-all duration-300" style={{ width: `${pct}%` }} />
       </div>
-      <div className="w-56 h-0.5 bg-pink-100 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-pink-400 rounded-full transition-all duration-300 ease-out"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <p className="mt-4 text-sm text-pink-400 tracking-widest font-light tabular-nums">
-        {pct} %
-      </p>
+      <p className="mt-4 text-pink-400 font-black">{pct}%</p>
     </div>
   )
 }
 
-// ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const framesRef = useRef<(HTMLImageElement | null)[]>(new Array(TOTAL_FRAMES).fill(null))
   const currentFrameRef = useRef({ value: 0 })
+  const zoomRef = useRef({ value: 1 })
   const mouseRef = useRef({ x: 0, y: 0 })
-  const rafRef = useRef<number | null>(null)
   const cardRefs = useRef<(HTMLDivElement | null)[]>([])
+  const lastSectionRef = useRef<HTMLDivElement>(null)
 
-  const [loadProgress, setLoadProgress] = useState(0)
   const [loaded, setLoaded] = useState(false)
+  const [loadProgress, setLoadProgress] = useState(0)
 
-  // ── Resize ──
-  const resizeCanvas = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    canvas.width = window.innerWidth
-    canvas.height = window.innerHeight
-    const ctx = canvas.getContext('2d')
-    const img = framesRef.current[Math.round(currentFrameRef.current.value)]
-    if (ctx && img) drawCover(ctx, img, canvas, mouseRef.current.x, mouseRef.current.y)
-  }, [])
-
-  // ── Render ──
-  const renderFrame = useCallback(() => {
+  const render = useCallback(() => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
     const idx = Math.max(0, Math.min(Math.round(currentFrameRef.current.value), TOTAL_FRAMES - 1))
     const img = framesRef.current[idx]
-    if (img) drawCover(ctx, img, canvas, mouseRef.current.x, mouseRef.current.y)
+    if (img) drawCover(ctx, img, canvas, mouseRef.current.x, mouseRef.current.y, zoomRef.current.value)
   }, [])
 
-  // ── Preload all 249 frames ──
   useEffect(() => {
-    let done = 0
+    let count = 0
     for (let i = 0; i < TOTAL_FRAMES; i++) {
       const img = new Image()
       img.src = framePath(i)
-      const finish = () => {
-        done++
-        setLoadProgress(done / TOTAL_FRAMES)
-        if (done === TOTAL_FRAMES) {
-          setLoaded(true)
-        }
+      const check = () => {
+        count++; setLoadProgress(count / TOTAL_FRAMES)
+        if (count === TOTAL_FRAMES) setLoaded(true)
       }
-      img.onload = () => {
-        framesRef.current[i] = img
-        finish()
-      }
-      img.onerror = finish
+      img.onload = () => { framesRef.current[i] = img; check(); }
+      img.onerror = check
     }
   }, [])
 
-  // ── Setup GSAP + interactions after load ──
   useEffect(() => {
     if (!loaded) return
-
-    resizeCanvas()
-    renderFrame()
-    window.addEventListener('resize', resizeCanvas)
-
-    // ── RAF render loop ──
-    const loop = () => {
-      renderFrame()
-      rafRef.current = requestAnimationFrame(loop)
+    if (canvasRef.current) {
+      canvasRef.current.width = window.innerWidth
+      canvasRef.current.height = window.innerHeight
     }
-    rafRef.current = requestAnimationFrame(loop)
+    gsap.ticker.add(render)
 
-    // ── Mouse parallax: canvas offset + glass card 3D float ──
-    const onMouseMove = (e: MouseEvent) => {
-      const mx = e.clientX - window.innerWidth / 2
-      const my = e.clientY - window.innerHeight / 2
-      mouseRef.current.x = mx
-      mouseRef.current.y = my
-
-      // Move glass cards in the opposite direction for a 3D floating effect
-      const cards = document.querySelectorAll<HTMLElement>('.glasscard')
-      gsap.to(cards, {
-        x: -mx * 0.03,
-        y: -my * 0.03,
-        duration: 0.6,
-        ease: 'power2.out',
-        overwrite: 'auto',
+    const onMove = (e: MouseEvent) => {
+      mouseRef.current.x = e.clientX - window.innerWidth / 2
+      mouseRef.current.y = e.clientY - window.innerHeight / 2
+      gsap.to('.glasscard', {
+        x: mouseRef.current.x * 0.04, y: mouseRef.current.y * 0.04,
+        rotateY: mouseRef.current.x * 0.02, rotateX: -mouseRef.current.y * 0.02,
+        duration: 0.7
       })
     }
-    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mousemove', onMove)
 
-    // ── GSAP ScrollTrigger: frame scrub ──
-    const tl = gsap.to(currentFrameRef.current, {
-      value: TOTAL_FRAMES - 1,
-      ease: 'none',
+    // 1. TIMELINE VIDEO
+    const vTl = gsap.timeline({
       scrollTrigger: {
         trigger: containerRef.current,
         start: 'top top',
         end: 'bottom bottom',
         scrub: 1,
-      },
+      }
     })
 
-    // ── Glass card fade + slide on scroll ──
-    cardRefs.current.forEach((card) => {
+    vTl.to(currentFrameRef.current, { value: INTRO_FRAMES, ease: 'none', duration: 3 })
+    vTl.to(currentFrameRef.current, { value: INTRO_FRAMES + 13, ease: 'none', duration: 6 }, "marais")
+    vTl.to(zoomRef.current, { value: 1.15, ease: 'power1.inOut', duration: 6 }, "marais")
+    vTl.to(currentFrameRef.current, { value: TOTAL_FRAMES - 1, ease: 'none', duration: 10 }, "walk")
+    vTl.to(zoomRef.current, { value: 1.35, duration: 4 }, "walk+=6") // Zoom vers l'interphone à la fin
+    vTl.to(zoomRef.current, { value: 1, duration: 2 }, "walk")
+
+    // 2. ANIMATIONS DES CARTES (0 à 3)
+    cardRefs.current.slice(0, 4).forEach((card) => {
       if (!card) return
-      gsap.fromTo(
-        card,
-        { opacity: 0, y: 50 },
+      gsap.fromTo(card,
+        { opacity: 0, y: 100, scale: 0.85 },
         {
-          opacity: 1,
-          y: 0,
-          duration: 1.2,
-          ease: 'power3.out',
+          opacity: 1, y: 0, scale: 1,
           scrollTrigger: {
             trigger: card,
-            start: 'top 82%',
+            start: 'top 85%',
             end: 'top 45%',
-            scrub: false,
-            toggleActions: 'play none none reverse',
-          },
+            scrub: 1,
+          }
         }
       )
     })
 
-    return () => {
-      window.removeEventListener('resize', resizeCanvas)
-      window.removeEventListener('mousemove', onMouseMove)
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-      tl.scrollTrigger?.kill()
-      ScrollTrigger.getAll().forEach((st) => st.kill())
+    // 3. CAS PARTICULIER : DERNIÈRE CARTE (FIXÉE AU CENTRE)
+    if (lastSectionRef.current && cardRefs.current[4]) {
+      const lastCard = cardRefs.current[4];
+
+      gsap.timeline({
+        scrollTrigger: {
+          trigger: lastSectionRef.current,
+          start: "top 40%",   // Déclenche l'apparition
+          end: "bottom top", // Garde la carte jusqu'à la fin du scroll
+          pin: lastCard,     // Épingle la carte
+          pinSpacing: false,
+          scrub: 1,
+          onEnter: () => {
+            // Assure le centrage exact lors de l'épinglage
+            gsap.set(lastCard, { top: '50%', yPercent: -50, position: 'fixed' });
+          }
+        }
+      })
+        .fromTo(lastCard,
+          { opacity: 0, scale: 0.7 },
+          { opacity: 1, scale: 1, duration: 1 }
+        );
     }
-  }, [loaded, renderFrame, resizeCanvas])
+
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      gsap.ticker.remove(render)
+      ScrollTrigger.getAll().forEach(st => st.kill())
+    }
+  }, [loaded, render])
 
   return (
     <>
-      {/* Fixed canvas background */}
-      <canvas
-        ref={canvasRef}
-        className="fixed inset-0 w-full h-full"
-        style={{ zIndex: -10 }}
-      />
-
-      {/* Preloader */}
+      <canvas ref={canvasRef} className="fixed inset-0 w-full h-full" style={{ zIndex: -10 }} />
       {!loaded && <Preloader progress={loadProgress} />}
 
-      {/* ── Scrollable container — 1000vh for a majestic slow scroll ── */}
-      <div ref={containerRef} className="relative h-[1000vh]">
+      <style dangerouslySetInnerHTML={{
+        __html: `
+        .text-neon { font-weight: 900 !important; text-shadow: 0 0 15px rgba(255,0,127,0.5), 0 2px 10px rgba(0,0,0,0.8); }
+        .desc-neon { font-weight: 800 !important; text-shadow: 0 2px 10px rgba(0,0,0,0.9); }
+      `}} />
 
-        {/* ── Section 0 — Intro (Survolez Paris...) ── */}
-        <section className="h-screen flex items-center justify-center px-6">
-          <GlassCard>
-            <div ref={(el) => { cardRefs.current[0] = el }}>
-              <h1 className="text-3xl font-bold text-pink-400 mb-2 drop-shadow">
-                Survolez Paris…
-              </h1>
-              <p className="text-white/90 leading-relaxed drop-shadow">
-                Direction le cœur historique du Marais.
-              </p>
-            </div>
-          </GlassCard>
+      <div ref={containerRef} className="relative h-[1100vh]">
+
+        {/* 0. Intro */}
+        <section className="h-screen flex items-center justify-center">
+          <div ref={el => { cardRefs.current[0] = el }}>
+            <GlassCard>
+              <h1 className="text-4xl text-neon text-pink-400 mb-2">Survolez Paris…</h1>
+              <p className="text-xl desc-neon">Direction le cœur historique du Marais.</p>
+            </GlassCard>
+          </div>
         </section>
 
-        {/* ── HUGE Spacer — The "Google Maps Plunge" (approx 350vh of pure visuals) ── */}
-        <div className="h-[350vh]" />
+        {/* Spacer pour Bienvenue (sur gravilliers_001) */}
+        <div className="h-[210vh]" />
 
-        {/* ── Section 1 — Bienvenue dans le Marais (Arrival in the street) ── */}
-        <section className="h-screen flex items-center justify-center px-6">
-          <GlassCard>
-            <div ref={(el) => { cardRefs.current[1] = el }}>
-              <h1 className="text-3xl font-bold text-pink-400 mb-2 drop-shadow">
-                Bienvenue dans le Marais
-              </h1>
-              <p className="text-white/90 leading-relaxed drop-shadow">
-                Plongez dans l'effervescence des petites rues parisiennes,
-                direction votre bulle de bien-être.
-              </p>
-            </div>
-          </GlassCard>
+        {/* 1. Marais */}
+        <section className="h-screen flex items-center justify-center">
+          <div ref={el => { cardRefs.current[1] = el }}>
+            <GlassCard>
+              <h1 className="text-4xl text-neon text-pink-400 mb-2">Bienvenue dans le Marais</h1>
+              <p className="text-xl desc-neon">Plongez dans l'effervescence des rues parisiennes.</p>
+            </GlassCard>
+          </div>
         </section>
 
-        {/* Spacer */}
-        <div className="h-[50vh]" />
+        <div className="h-[100vh]" />
 
-        {/* ── Section 2 — 20 rue des Gravilliers ── */}
-        <section className="h-screen flex items-center justify-center px-6">
-          <GlassCard>
-            <div ref={(el) => { cardRefs.current[2] = el }}>
-              <h2 className="text-2xl font-bold text-pink-400 mb-2 drop-shadow">
-                Le 20 rue des Gravilliers
-              </h2>
-              <p className="text-white/90 leading-relaxed drop-shadow">
-                Poussez la grande porte et laissez le bruit de la ville
-                derrière vous…
-              </p>
-            </div>
-          </GlassCard>
+        {/* 2. Adresse */}
+        <section className="h-screen flex items-center justify-center">
+          <div ref={el => { cardRefs.current[2] = el }}>
+            <GlassCard>
+              <h2 className="text-3xl text-neon text-pink-400 mb-2">Le 20 rue des Gravilliers</h2>
+              <p className="text-xl desc-neon">Poussez la grande porte de la Maison du Peps...</p>
+            </GlassCard>
+          </div>
         </section>
 
-        {/* Spacer */}
-        <div className="h-[50vh]" />
+        <div className="h-[100vh]" />
 
-        {/* ── Section 3 — Havre de paix ── */}
-        <section className="h-screen flex items-center justify-center px-6">
-          <GlassCard>
-            <div ref={(el) => { cardRefs.current[3] = el }}>
-              <h2 className="text-2xl font-bold text-pink-400 mb-2 drop-shadow">
-                Un havre de paix
-              </h2>
-              <p className="text-white/90 leading-relaxed drop-shadow">
-                Avancez dans l'allée. Vous y êtes presque.
-              </p>
-            </div>
-          </GlassCard>
+        {/* 3. Havre de paix */}
+        <section className="h-screen flex items-center justify-center">
+          <div ref={el => { cardRefs.current[3] = el }}>
+            <GlassCard>
+              <h2 className="text-3xl text-neon text-pink-400 mb-2">Un havre de paix</h2>
+              <p className="text-xl desc-neon">Avancez dans l'allée pavée. Vous y êtes presque.</p>
+            </GlassCard>
+          </div>
         </section>
 
-        {/* Spacer */}
-        <div className="h-[50vh]" />
+        <div className="h-[100vh]" />
 
-        {/* ── Section 4 — CTA finale (Interphone) ── */}
-        <section className="h-screen flex items-center justify-center px-6">
-          <GlassCard>
-            <div ref={(el) => { cardRefs.current[4] = el }}>
-              <h1 className="text-4xl font-bold text-pink-400 mb-4 drop-shadow">
-                Laet's Danse Studio
-              </h1>
-              <p className="mb-6 font-medium text-white/90 drop-shadow">
-                Bâtiment A. Sonnez, on vous attend avec le sourire&nbsp;!
-              </p>
-              <a
-                href="https://wa.me/33681178159"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block bg-green-500 text-white font-bold py-3 px-6 rounded-full shadow-lg hover:scale-105 transition-transform"
-              >
-                💬 Discutons sur WhatsApp
+        {/* 4. Final - ÉPINGLÉ AU CENTRE */}
+        <section ref={lastSectionRef} className="h-screen flex items-center justify-center relative">
+          <div ref={el => { cardRefs.current[4] = el }} className="z-20">
+            <GlassCard>
+              <h1 className="text-5xl text-neon text-pink-400 mb-4 uppercase tracking-tighter leading-none">Laet's Danse Studio</h1>
+              <p className="mb-6 text-xl desc-neon uppercase">Bâtiment A. Sonnez, on vous attend !</p>
+              <a href="https://wa.me/33681178159" target="_blank" rel="noopener noreferrer" className="inline-block bg-green-500 text-white font-black py-4 px-10 rounded-full text-xl shadow-lg">
+                💬 WhatsApp
               </a>
-            </div>
-          </GlassCard>
+            </GlassCard>
+          </div>
         </section>
 
+        {/* Espace de fin pour voir l'interphone derrière la carte fixe */}
+        <div className="h-[150vh]" />
       </div>
     </>
   )
