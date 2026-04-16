@@ -3,7 +3,10 @@
 @tailwind utilities;
 
 html {
-  scroll-behavior: auto;
+  /* On force un scroll fluide sans interférence du navigateur */
+  scroll-behavior: auto !important;
+  /* Empêche le "pull-to-refresh" qui casse tout sur Chrome mobile */
+  overscroll-behavior-y: none;
 }
 
 body {
@@ -11,6 +14,9 @@ body {
   background: #fdf9f6;
   font-family: 'Inter', system-ui, sans-serif;
   overflow-x: hidden;
+  /* Important pour la fluidité des animations sur mobile */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
@@ -19,15 +25,33 @@ body {
 
 canvas {
   display: block;
+  position: fixed;
+  inset: 0;
+  /* Indispensable : empêche le navigateur d'interpréter les swipes 
+     comme des gestes système, laissant GSAP gérer le scroll */
+  touch-action: none;
+  /* Optimisation de rendu pour les images */
+  image-rendering: -webkit-optimize-contrast;
 }
 
-/* Custom scrollbar */
+/* On s'assure que les cartes ne bloquent pas les événements tactiles */
+.glasscard {
+  pointer-events: auto;
+  /* Évite les flashs gris lors du clic sur mobile */
+  -webkit-tap-highlight-color: transparent;
+  /* Performance : aide le GPU à gérer la transparence */
+  will-change: transform, opacity;
+}
+
+/* Custom scrollbar - Discrète pour ne pas gêner */
 ::-webkit-scrollbar {
   width: 4px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #f9a8d4;
   border-radius: 2px;
